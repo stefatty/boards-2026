@@ -234,6 +234,13 @@ input:checked+.toggle-slider:before{background:#fff;transform:translateX(18px);}
 .recat-flag-item .fi-domain{background:rgba(91,196,245,.15);color:#5bc4f5;border-radius:4px;padding:2px 7px;font-weight:600;}
 .recat-flag-item .fi-arrow{color:var(--muted);}
 .recat-flag-item .fi-note{color:var(--yellow);font-style:italic;margin-top:5px;}
+.recat-flag-item .fi-wrong{background:rgba(255,99,99,.12);color:#ff6363;border-radius:4px;padding:2px 7px;font-weight:600;font-size:11px;}
+.recat-mode-tabs{display:flex;gap:8px;margin-bottom:16px;}
+.recat-mode-tab{flex:1;padding:7px;border-radius:8px;border:1.5px solid var(--border);background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;}
+.recat-mode-tab.active{border-color:#5bc4f5;color:#5bc4f5;background:rgba(91,196,245,.12);}
+.recat-mode-tab.active.wrong{border-color:#ff6363;color:#ff6363;background:rgba(255,99,99,.12);}
+#wrong-correct-opt{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;margin-bottom:14px;}
+#wrong-note{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;resize:vertical;min-height:55px;box-sizing:border-box;margin-bottom:16px;}
 /* ── Bookmark Button ── */
 .bookmark-btn{background:none;border:1.5px solid var(--border);border-radius:20px;padding:3px 11px;font-size:11px;font-weight:600;cursor:pointer;color:var(--muted);transition:all .15s;margin-left:auto;white-space:nowrap;}
 .bookmark-btn:hover{border-color:var(--yellow);color:var(--yellow);}
@@ -920,30 +927,52 @@ function startPracticeTest(idx) {
 
 
 // ── Re-categorize / Flag Feature ───────────────────────────────────────────
-const RECAT_KEY = 'abpd_recat_v1';
+const RECAT_KEY    = 'abpd_recat_v1';
+const WRONG_ANS_KEY = 'abpd_wrongans_v1';
 
-function getRecatFlags() {
-  try { return JSON.parse(localStorage.getItem(RECAT_KEY) || '[]'); } catch(e) { return []; }
-}
-function saveRecatFlags(flags) {
-  localStorage.setItem(RECAT_KEY, JSON.stringify(flags));
-}
+function getRecatFlags()   { try { return JSON.parse(localStorage.getItem(RECAT_KEY)    || '[]'); } catch(e) { return []; } }
+function saveRecatFlags(f) { localStorage.setItem(RECAT_KEY, JSON.stringify(f)); }
+function getWrongAnsFlags()   { try { return JSON.parse(localStorage.getItem(WRONG_ANS_KEY) || '[]'); } catch(e) { return []; } }
+function saveWrongAnsFlags(f) { localStorage.setItem(WRONG_ANS_KEY, JSON.stringify(f)); }
 
-let _recatQIdx = null;
+let _recatQIdx  = null;
+let _flagMode   = 'domain'; // 'domain' | 'wrong'
+
+function switchFlagMode(mode) {
+  _flagMode = mode;
+  document.getElementById('tab-domain').className = 'recat-mode-tab' + (mode==='domain'?' active':'');
+  document.getElementById('tab-wrong').className  = 'recat-mode-tab' + (mode==='wrong'?' active wrong':'');
+  document.getElementById('domain-flag-form').style.display = mode==='domain' ? 'block' : 'none';
+  document.getElementById('wrong-ans-form').style.display   = mode==='wrong'  ? 'block' : 'none';
+}
 
 function openRecatPanel(qIdx) {
   _recatQIdx = qIdx;
   const q = ALL_QUESTIONS[qIdx];
-  document.getElementById('recat-title').textContent = '🏷️ Suggest Domain Change';
+  document.getElementById('recat-title').textContent = '🏷️ Flag Question';
   document.getElementById('recat-qtext').textContent = q.q.length > 120 ? q.q.slice(0,120)+'…' : q.q;
   document.getElementById('recat-current').textContent = q.domain || q.category || '(none)';
   document.getElementById('recat-domain-select').value = '';
   document.getElementById('recat-note').value = '';
+  document.getElementById('wrong-note').value = '';
+  // Populate the "correct answer" dropdown with this question's options
+  const optSel = document.getElementById('wrong-correct-opt');
+  optSel.innerHTML = '<option value="">— select the correct answer —</option>';
+  (q.options || []).forEach((opt, i) => {
+    const label = String.fromCharCode(65 + i);
+    const el = document.createElement('option');
+    el.value = i;
+    el.textContent = label + '. ' + opt;
+    optSel.appendChild(el);
+  });
+  document.getElementById('wrong-submit-btn').textContent = '⚠️ Flag Wrong Answer';
+  document.getElementById('wrong-submit-btn').disabled = false;
+  document.getElementById('recat-submit-btn').textContent = 'Submit Flag';
+  document.getElementById('recat-submit-btn').disabled = false;
+  switchFlagMode('domain');
   document.getElementById('recat-form-area').style.display = '';
   document.getElementById('recat-flags-area').style.display = 'none';
   document.getElementById('recat-overlay').classList.add('open');
-  document.getElementById('recat-submit-btn').textContent = 'Submit Flag';
-  document.getElementById('recat-submit-btn').disabled = false;
 }
 
 function closeRecatPanel() {
@@ -958,63 +987,93 @@ function submitRecat() {
   const q = ALL_QUESTIONS[_recatQIdx];
   const profileName = state.activeSlot !== null ? (getProfile(state.activeSlot)||{}).name||('Profile '+(state.activeSlot+1)) : 'Unknown';
   const flags = getRecatFlags();
-  flags.push({
-    qIdx: _recatQIdx,
-    qText: q.q.slice(0,100),
-    currentDomain: q.domain || q.category || '',
-    suggestedDomain: suggested,
-    note: note,
-    profile: profileName,
-    timestamp: new Date().toISOString()
-  });
+  flags.push({ type:'domain', qIdx:_recatQIdx, qText:q.q.slice(0,100), currentDomain:q.domain||q.category||'', suggestedDomain:suggested, note, profile:profileName, timestamp:new Date().toISOString() });
   saveRecatFlags(flags);
-  // Visual feedback
   const btn = document.getElementById('recat-submit-btn');
-  btn.textContent = '✓ Flagged!';
-  btn.disabled = true;
-  btn.style.background = 'rgba(62,207,130,.3)';
-  // Update the flag button in the quiz card
+  btn.textContent = '✓ Flagged!'; btn.disabled = true; btn.style.background = 'rgba(62,207,130,.3)';
   const flagBtn = document.getElementById('flag-btn');
   if (flagBtn) { flagBtn.classList.add('flagged'); flagBtn.textContent = '🏷️ Flagged'; }
+  updateFlagsButton();
+  setTimeout(closeRecatPanel, 900);
+}
+
+function submitWrongAns() {
+  const q = ALL_QUESTIONS[_recatQIdx];
+  const optSel = document.getElementById('wrong-correct-opt');
+  const suggestedOptIdx = optSel.value !== '' ? parseInt(optSel.value) : null;
+  const suggestedOptText = suggestedOptIdx !== null ? (q.options||[])[suggestedOptIdx] || '' : '';
+  const note = document.getElementById('wrong-note').value.trim();
+  const profileName = state.activeSlot !== null ? (getProfile(state.activeSlot)||{}).name||('Profile '+(state.activeSlot+1)) : 'Unknown';
+  const flags = getWrongAnsFlags();
+  flags.push({ type:'wrongans', qIdx:_recatQIdx, qText:q.q.slice(0,100), currentAnswer:(q.options||[])[q.answer]||'', suggestedOptIdx, suggestedOptText, note, profile:profileName, timestamp:new Date().toISOString() });
+  saveWrongAnsFlags(flags);
+  const btn = document.getElementById('wrong-submit-btn');
+  btn.textContent = '✓ Flagged!'; btn.disabled = true; btn.style.background = 'rgba(62,207,130,.3)';
+  const flagBtn = document.getElementById('flag-btn');
+  if (flagBtn) { flagBtn.classList.add('flagged'); flagBtn.textContent = '⚠️ Flagged'; }
+  updateFlagsButton();
   setTimeout(closeRecatPanel, 900);
 }
 
 function viewRecats() {
-  const flags = getRecatFlags();
-  document.getElementById('recat-title').textContent = '🏷️ Domain Flags (' + flags.length + ')';
+  const domainFlags = getRecatFlags();
+  const wrongFlags  = getWrongAnsFlags();
+  const total = domainFlags.length + wrongFlags.length;
+  document.getElementById('recat-title').textContent = '🏷️ All Flags (' + total + ')';
   document.getElementById('recat-form-area').style.display = 'none';
   document.getElementById('recat-flags-area').style.display = '';
-  document.getElementById('recat-flags-count').textContent = flags.length + ' flag' + (flags.length!==1?'s':'') + ' submitted';
+  document.getElementById('recat-flags-count').textContent = total + ' flag' + (total!==1?'s':'') + ' total (' + domainFlags.length + ' domain · ' + wrongFlags.length + ' wrong answer)';
   const list = document.getElementById('recat-flags-list');
-  if (flags.length === 0) {
+  if (total === 0) {
     list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">No flags yet.</div>';
   } else {
-    list.innerHTML = flags.slice().reverse().map((f,i) => `
-      <div class="recat-flag-item">
-        <div class="fi-q">${f.qText}${f.qText.length>=100?'…':''}</div>
-        <div class="fi-meta">
-          <span class="fi-domain">${f.currentDomain}</span>
-          <span class="fi-arrow">→</span>
-          <span class="fi-domain" style="background:rgba(62,207,130,.15);color:var(--green)">${f.suggestedDomain}</span>
-          <span style="margin-left:auto;font-size:11px">${f.profile} · ${new Date(f.timestamp).toLocaleDateString()}</span>
-        </div>
-        ${f.note ? '<div class="fi-note">"'+f.note+'"</div>' : ''}
-      </div>`).join('');
+    // Combine and sort by timestamp descending
+    const all = [
+      ...domainFlags.map(f=>({...f, _type:'domain'})),
+      ...wrongFlags.map(f=>({...f, _type:'wrongans'}))
+    ].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+    list.innerHTML = all.map(f => {
+      if (f._type === 'domain') {
+        return `<div class="recat-flag-item">
+          <div class="fi-q">${f.qText}${f.qText.length>=100?'…':''}</div>
+          <div class="fi-meta">
+            <span class="fi-domain">${f.currentDomain}</span>
+            <span class="fi-arrow">→</span>
+            <span class="fi-domain" style="background:rgba(62,207,130,.15);color:var(--green)">${f.suggestedDomain}</span>
+            <span style="margin-left:auto;font-size:11px">${f.profile} · ${new Date(f.timestamp).toLocaleDateString()}</span>
+          </div>
+          ${f.note ? '<div class="fi-note">"'+f.note+'"</div>' : ''}
+        </div>`;
+      } else {
+        return `<div class="recat-flag-item">
+          <div class="fi-q">${f.qText}${f.qText.length>=100?'…':''}</div>
+          <div class="fi-meta">
+            <span class="fi-wrong">⚠️ Wrong Answer</span>
+            <span style="color:var(--muted);font-size:11px;">Listed: <em>${f.currentAnswer||'?'}</em>${f.suggestedOptText?' → Suggested: <strong>'+f.suggestedOptText+'</strong>':''}</span>
+            <span style="margin-left:auto;font-size:11px">${f.profile} · ${new Date(f.timestamp).toLocaleDateString()}</span>
+          </div>
+          ${f.note ? '<div class="fi-note">"'+f.note+'"</div>' : ''}
+        </div>`;
+      }
+    }).join('');
   }
   document.getElementById('recat-overlay').classList.add('open');
 }
 
 function copyRecats() {
-  const flags = getRecatFlags();
-  navigator.clipboard.writeText(JSON.stringify(flags, null, 2))
-    .then(()=>alert('Copied ' + flags.length + ' flags to clipboard!'))
-    .catch(()=>alert('Copy failed — open browser console and run: JSON.parse(localStorage.getItem("abpd_recat_v1"))'));
+  const all = { domainFlags: getRecatFlags(), wrongAnsFlags: getWrongAnsFlags() };
+  navigator.clipboard.writeText(JSON.stringify(all, null, 2))
+    .then(()=>alert('Copied all flags to clipboard!'))
+    .catch(()=>alert('Copy failed — open browser console and run: localStorage.getItem("abpd_recat_v1")'));
 }
 
 function clearRecats() {
-  if (!confirm('Clear ALL ' + getRecatFlags().length + ' flags? This cannot be undone.')) return;
+  const total = getRecatFlags().length + getWrongAnsFlags().length;
+  if (!confirm('Clear ALL ' + total + ' flags? This cannot be undone.')) return;
   localStorage.removeItem(RECAT_KEY);
+  localStorage.removeItem(WRONG_ANS_KEY);
   viewRecats();
+  updateFlagsButton();
 }
 
 
@@ -1189,7 +1248,7 @@ function updateWrongButton() {
 function updateFlagsButton() {
   const cnt=document.getElementById('cnt-flags');
   if(!cnt) return;
-  const n=getRecatFlags().length;
+  const n=getRecatFlags().length+getWrongAnsFlags().length;
   cnt.textContent=n>0?n:'';
 }
 
@@ -1270,33 +1329,53 @@ function showStatsPanel() {
 renderProfileScreen();
 </script>
 
-<!-- Re-categorize Modal -->
+<!-- Re-categorize / Wrong Answer Modal -->
 <div id="recat-overlay" onclick="if(event.target===this)closeRecatPanel()">
   <div id="recat-panel">
-    <h3 id="recat-title">🏷️ Suggest Domain Change</h3>
+    <h3 id="recat-title">🏷️ Flag Question</h3>
     <div class="recat-qtext" id="recat-qtext"></div>
     <div id="recat-form-area">
-      <label>CURRENT DOMAIN</label>
-      <div id="recat-current" style="font-size:13px;color:var(--text);margin-bottom:14px;padding:7px 10px;background:var(--bg);border-radius:8px;border:1px solid var(--border);"></div>
-      <label>SUGGESTED DOMAIN</label>
-      <select id="recat-domain-select">
-        <option value="">— select correct domain —</option>
-        <option>Behavior Guidance</option>
-        <option>Growth and Development</option>
-        <option>Oral Facial Injury, Emergency Care and Oral Surgery</option>
-        <option>Diagnosis, Oral Pathology, Oral Radiology, and Oral Medicine</option>
-        <option>Prevention and Health Promotion</option>
-        <option>Dental Caries, Non-Restorative Caries Management and Restorative Treatment</option>
-        <option>Pulp Therapy</option>
-        <option>Special Health Care Needs</option>
-        <option>Advocacy and Education</option>
-        <option>Elements of Pediatric Dental Practice</option>
-      </select>
-      <label>NOTES (optional)</label>
-      <textarea id="recat-note" placeholder="Why should it be re-categorized?"></textarea>
-      <div class="recat-actions">
-        <button class="nav-btn secondary" onclick="closeRecatPanel()">Cancel</button>
-        <button class="nav-btn primary" onclick="submitRecat()" id="recat-submit-btn">Submit Flag</button>
+      <div class="recat-mode-tabs">
+        <button class="recat-mode-tab active" id="tab-domain" onclick="switchFlagMode('domain')">🏷️ Wrong Domain</button>
+        <button class="recat-mode-tab" id="tab-wrong" onclick="switchFlagMode('wrong')">⚠️ Wrong Answer</button>
+      </div>
+      <!-- Domain change form -->
+      <div id="domain-flag-form">
+        <label>CURRENT DOMAIN</label>
+        <div id="recat-current" style="font-size:13px;color:var(--text);margin-bottom:14px;padding:7px 10px;background:var(--bg);border-radius:8px;border:1px solid var(--border);"></div>
+        <label>SUGGESTED DOMAIN</label>
+        <select id="recat-domain-select">
+          <option value="">— select correct domain —</option>
+          <option>Behavior Guidance</option>
+          <option>Growth and Development</option>
+          <option>Oral Facial Injury, Emergency Care and Oral Surgery</option>
+          <option>Diagnosis, Oral Pathology, Oral Radiology, and Oral Medicine</option>
+          <option>Prevention and Health Promotion</option>
+          <option>Dental Caries, Non-Restorative Caries Management and Restorative Treatment</option>
+          <option>Pulp Therapy</option>
+          <option>Special Health Care Needs</option>
+          <option>Advocacy and Education</option>
+          <option>Elements of Pediatric Dental Practice</option>
+        </select>
+        <label>NOTES (optional)</label>
+        <textarea id="recat-note" placeholder="Why should it be re-categorized?"></textarea>
+        <div class="recat-actions">
+          <button class="nav-btn secondary" onclick="closeRecatPanel()">Cancel</button>
+          <button class="nav-btn primary" onclick="submitRecat()" id="recat-submit-btn">Submit Flag</button>
+        </div>
+      </div>
+      <!-- Wrong answer form -->
+      <div id="wrong-ans-form" style="display:none">
+        <label>WHAT SHOULD THE CORRECT ANSWER BE? (optional)</label>
+        <select id="wrong-correct-opt">
+          <option value="">— select the correct answer —</option>
+        </select>
+        <label>NOTES / EXPLANATION (optional)</label>
+        <textarea id="wrong-note" placeholder="e.g. Source, reference, or reasoning..."></textarea>
+        <div class="recat-actions">
+          <button class="nav-btn secondary" onclick="closeRecatPanel()">Cancel</button>
+          <button class="nav-btn primary" onclick="submitWrongAns()" id="wrong-submit-btn" style="background:rgba(255,99,99,.8);">⚠️ Flag Wrong Answer</button>
+        </div>
       </div>
     </div>
     <div id="recat-flags-area" style="display:none">
