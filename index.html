@@ -235,6 +235,8 @@ input:checked+.toggle-slider:before{background:#fff;transform:translateX(18px);}
 .recat-flag-item .fi-arrow{color:var(--muted);}
 .recat-flag-item .fi-note{color:var(--yellow);font-style:italic;margin-top:5px;}
 .recat-flag-item .fi-wrong{background:rgba(255,99,99,.12);color:#ff6363;border-radius:4px;padding:2px 7px;font-weight:600;font-size:11px;}
+.recat-flag-item .fi-delete{background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:0 2px;line-height:1;float:right;margin-left:8px;opacity:.5;transition:opacity .15s;}
+.recat-flag-item .fi-delete:hover{opacity:1;color:var(--red);}
 .recat-mode-tabs{display:flex;gap:8px;margin-bottom:16px;}
 .recat-mode-tab{flex:1;padding:7px;border-radius:8px;border:1.5px solid var(--border);background:none;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;}
 .recat-mode-tab.active{border-color:#5bc4f5;color:#5bc4f5;background:rgba(91,196,245,.12);}
@@ -1015,6 +1017,20 @@ function submitWrongAns() {
   setTimeout(closeRecatPanel, 900);
 }
 
+function deleteFlag(type, origIdx) {
+  if (type === 'domain') {
+    const flags = getRecatFlags();
+    flags.splice(origIdx, 1);
+    saveRecatFlags(flags);
+  } else {
+    const flags = getWrongAnsFlags();
+    flags.splice(origIdx, 1);
+    saveWrongAnsFlags(flags);
+  }
+  updateFlagsButton();
+  viewRecats();
+}
+
 function viewRecats() {
   const domainFlags = getRecatFlags();
   const wrongFlags  = getWrongAnsFlags();
@@ -1027,15 +1043,16 @@ function viewRecats() {
   if (total === 0) {
     list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">No flags yet.</div>';
   } else {
-    // Combine and sort by timestamp descending
+    // Combine, track original index per type, sort by timestamp descending
     const all = [
-      ...domainFlags.map(f=>({...f, _type:'domain'})),
-      ...wrongFlags.map(f=>({...f, _type:'wrongans'}))
+      ...domainFlags.map((f, i) => ({...f, _type:'domain',   _origIdx:i})),
+      ...wrongFlags.map((f, i)  => ({...f, _type:'wrongans', _origIdx:i}))
     ].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
     list.innerHTML = all.map(f => {
+      const delBtn = `<button class="fi-delete" onclick="deleteFlag('${f._type}',${f._origIdx})" title="Delete this flag">×</button>`;
       if (f._type === 'domain') {
         return `<div class="recat-flag-item">
-          <div class="fi-q">${f.qText}${f.qText.length>=100?'…':''}</div>
+          <div class="fi-q">${delBtn}${f.qText}${f.qText.length>=100?'…':''}</div>
           <div class="fi-meta">
             <span class="fi-domain">${f.currentDomain}</span>
             <span class="fi-arrow">→</span>
@@ -1046,7 +1063,7 @@ function viewRecats() {
         </div>`;
       } else {
         return `<div class="recat-flag-item">
-          <div class="fi-q">${f.qText}${f.qText.length>=100?'…':''}</div>
+          <div class="fi-q">${delBtn}${f.qText}${f.qText.length>=100?'…':''}</div>
           <div class="fi-meta">
             <span class="fi-wrong">⚠️ Wrong Answer</span>
             <span style="color:var(--muted);font-size:11px;">Listed: <em>${f.currentAnswer||'?'}</em>${f.suggestedOptText?' → Suggested: <strong>'+f.suggestedOptText+'</strong>':''}</span>
