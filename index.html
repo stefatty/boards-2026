@@ -206,6 +206,17 @@ input:checked+.toggle-slider:before{background:#fff;transform:translateX(18px);}
 .pt-btn .pt-name{flex:1;font-weight:500;}
 .pt-btn .pt-count{font-size:11px;font-weight:700;color:var(--muted);background:var(--surface2);border-radius:10px;padding:2px 7px;min-width:20px;text-align:center;}
 .pt-btn.active .pt-count{color:#a78bfa;}
+.pt-start-card{max-width:520px;margin:24px auto;padding:28px 32px;background:var(--surface);border:1px solid var(--border);border-radius:16px;}
+.pt-start-card h2{margin:0 0 4px;font-size:20px;color:var(--text);}
+.pt-start-card .pt-start-sub{font-size:13px;color:var(--muted);margin-bottom:20px;}
+.pt-start-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;}
+.pt-start-stat{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;}
+.pt-start-stat .n{font-size:22px;font-weight:700;color:var(--text);line-height:1.1;}
+.pt-start-stat .l{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.04em;}
+.pt-start-badge{display:inline-block;font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px;margin-bottom:16px;}
+.pt-start-badge.fresh{background:rgba(91,196,245,.15);color:#5bc4f5;}
+.pt-start-badge.attempted{background:rgba(62,207,130,.15);color:var(--green);}
+
 .memo-btn{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:none;background:none;cursor:pointer;width:100%;text-align:left;color:var(--text);font-size:12.5px;transition:background .15s;}
 .memo-btn:hover{background:var(--surface2);}
 .memo-btn.active{background:var(--surface2);color:#34d399;}
@@ -335,6 +346,10 @@ input:checked+.toggle-slider:before{background:#fff;transform:translateX(18px);}
         <span class="d-name">🔖 Bookmarked</span>
         <span class="d-count" id="cnt-bookmarked" style="color:var(--yellow);">0</span>
       </button>
+      <button class="domain-btn" onclick="startDrillUnseen()" id="unseen-drill-btn" style="color:var(--green);display:none;">
+        <span class="d-name">🆕 Unseen Questions</span>
+        <span class="d-count" id="cnt-unseen" style="color:var(--green);"></span>
+      </button>
       <div class="pt-section">
         <div class="pt-section-label">📝 Practice Tests</div>
         <button class="pt-btn" id="pt-btn-0" onclick="startPracticeTest(0)"><span class="pt-name">📝 2026 Practice QE</span><span class="pt-count" id="pt-cnt-0">…</span></button>
@@ -410,7 +425,7 @@ function newProfile(slot) {
   return {
     slot, name: '', emoji: EMOJIS[slot % EMOJIS.length],
     color: COLORS[slot % COLORS.length],
-    wrongIds: [], bookmarkedIds: [], stats: {}, totalCorrect: 0, totalWrong: 0,
+    wrongIds: [], bookmarkedIds: [], seenIds: [], stats: {}, totalCorrect: 0, totalWrong: 0,
     sessions: 0, lastSeen: null
   };
 }
@@ -419,9 +434,9 @@ function newProfile(slot) {
 let state = {
   mode: 'mcq', domain: 'all', queue: [], idx: 0,
   answered: false, correct: 0, wrong: 0, skipped: 0,
-  sessionStats: {}, isDrilling: false, isBookmarkDrill: false, isPracticeTest: false, practiceTestLabel: '', shuffle: true,
+  sessionStats: {}, isDrilling: false, isBookmarkDrill: false, isPracticeTest: false, practiceTestLabel: '', shuffle: true, unseenOnly: false,
   activeSlot: null,
-  wrongIds: new Set(), bookmarkedIds: new Set(),
+  wrongIds: new Set(), bookmarkedIds: new Set(), seenIds: new Set(),
 };
 
 // ── Profile Screen ─────────────────────────────────────────────────────
@@ -439,7 +454,7 @@ function renderProfileScreen() {
       card.innerHTML = `
         <div class="profile-avatar" style="background:${p.color}22">${p.emoji}</div>
         <div class="profile-name">${p.name}</div>
-        <div class="profile-stats">${total > 0 ? pct+'% overall · '+total+' answered' : 'No questions yet'}${p.wrongIds.length > 0 ? '<br>'+p.wrongIds.length+' to review' : ''}${(p.bookmarkedIds||[]).length > 0 ? ' &nbsp;·&nbsp; 🔖 '+(p.bookmarkedIds||[]).length : ''}</div>
+        <div class="profile-stats">${total > 0 ? pct+'% overall · '+total+' answered' : 'No questions yet'}${(p.seenIds||[]).length > 0 ? '<br>📊 '+(p.seenIds||[]).length+' / 1842 seen ('+Math.round((p.seenIds||[]).length/1842*100)+'%)' : ''}${p.wrongIds.length > 0 ? ' · '+p.wrongIds.length+' to review' : ''}${(p.bookmarkedIds||[]).length > 0 ? ' &nbsp;·&nbsp; 🔖 '+(p.bookmarkedIds||[]).length : ''}</div>
         <div class="profile-badge"></div>`;
       card.onclick = () => enterApp(slot);
     } else {
@@ -527,6 +542,11 @@ function enterApp(slot) {
   // Restore wrongIds and bookmarkedIds from profile
   state.wrongIds = new Set(p.wrongIds || []);
   state.bookmarkedIds = new Set(p.bookmarkedIds || []);
+  // Restore seenIds; backfill from wrongIds for legacy profiles
+  const _savedSeen = new Set(p.seenIds || []);
+  (p.wrongIds || []).forEach(i => _savedSeen.add(i));
+  state.seenIds = _savedSeen;
+  if (_savedSeen.size > (p.seenIds||[]).length) { p.seenIds=[..._savedSeen]; putProfile(slot,p); }
   state.correct = 0; state.wrong = 0; state.skipped = 0;
   state.sessionStats = {};
   // Update last seen
@@ -540,6 +560,7 @@ function enterApp(slot) {
   updateWrongButton();
   updateBookmarkButton();
   updateFlagsButton();
+  updateUnseenButton();
   initPracticeTestCounts();
   initMemoSetCounts();
   selectDomain('all');
@@ -562,6 +583,7 @@ function persistWrongIds() {
   if (!p) return;
   p.wrongIds = [...state.wrongIds];
   p.bookmarkedIds = [...state.bookmarkedIds];
+  p.seenIds = [...state.seenIds];
   putProfile(state.activeSlot, p);
 }
 
@@ -626,7 +648,17 @@ function buildQueue(domain, ids=null) {
 }
 
 function startQuiz(domain) {
-  state.queue=buildQueue(domain); state.idx=0;
+  if (state.unseenOnly) {
+    const allIds = domain==='all' ? ALL_QUESTIONS.map((_,i)=>i)
+      : ALL_QUESTIONS.map((q,i)=>(q.domain||q.category)===domain?i:-1).filter(i=>i>=0);
+    const pool = allIds.filter(i=>!state.seenIds.has(i));
+    if (!pool.length) { alert('🎉 You\'ve seen all questions in this set!'); return; }
+    if (state.shuffle) for (let i=pool.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]]; }
+    state.queue=pool;
+  } else {
+    state.queue=buildQueue(domain);
+  }
+  state.idx=0;
   state.correct=0; state.wrong=0; state.skipped=0;
   state.answered=false; state.isDrilling=false; state.isBookmarkDrill=false; state.isPracticeTest=false; state.sessionStats={};
   updateChips(); renderQuestion();
@@ -667,6 +699,29 @@ function toggleBookmark(qIdx) {
   persistWrongIds();
 }
 
+function startDrillUnseen() {
+  const unseenIds = ALL_QUESTIONS.map((_,i)=>i).filter(i=>!state.seenIds.has(i));
+  if (!unseenIds.length) { alert('🎉 You\'ve seen all 1,842 questions!'); return; }
+  state.queue = unseenIds.slice();
+  for (let i=state.queue.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1));[state.queue[i],state.queue[j]]=[state.queue[j],state.queue[i]]; }
+  state.idx=0; state.correct=0; state.wrong=0; state.skipped=0;
+  state.answered=false; state.isDrilling=false; state.isBookmarkDrill=false; state.isPracticeTest=false; state.sessionStats={};
+  document.querySelectorAll('.domain-btn,.pt-btn,.memo-btn').forEach(b=>b.classList.remove('active'));
+  const btn = document.getElementById('unseen-drill-btn');
+  if (btn) btn.classList.add('active');
+  document.getElementById('topbar-title').textContent='🆕 Unseen Questions';
+  updateChips(); renderQuestion();
+}
+
+function updateUnseenButton() {
+  const btn = document.getElementById('unseen-drill-btn');
+  const cnt = document.getElementById('cnt-unseen');
+  if (!btn || !cnt) return;
+  const unseenCount = ALL_QUESTIONS.length - state.seenIds.size;
+  cnt.textContent = unseenCount > 0 ? unseenCount : '';
+  btn.style.display = unseenCount > 0 ? 'flex' : 'none';
+}
+
 function updateBookmarkButton() {
   const btn = document.getElementById('bookmark-drill-btn');
   const cnt = document.getElementById('cnt-bookmarked');
@@ -705,6 +760,10 @@ function renderStart() {
         <label class="toggle-switch"><input type="checkbox" ${state.shuffle?'checked':''} onchange="state.shuffle=this.checked"><span class="toggle-slider"></span></label>
         <span class="toggle-label">Shuffle questions</span>
       </div>
+      <div class="shuffle-row">
+        <label class="toggle-switch"><input type="checkbox" ${state.unseenOnly?'checked':''} onchange="state.unseenOnly=this.checked"><span class="toggle-slider"></span></label>
+        <span class="toggle-label">Unseen questions only <span style="color:var(--green);font-weight:600;">${allIds.filter(i=>!state.seenIds.has(i)).length} left</span></span>
+      </div>
       <div class="start-actions">
         <button class="nav-btn primary" onclick="startQuiz(state.domain)">Start Drilling</button>
         ${wrongInDomain>0?`<button class="nav-btn secondary" onclick="startDrillWrong()" style="color:var(--red);border-color:var(--red)">Drill ${wrongInDomain} Missed ✗</button>`:''}
@@ -718,6 +777,7 @@ function renderQuestion() {
   const area = document.getElementById('quiz-area');
   if (state.idx >= state.queue.length) { renderResults(); return; }
   const qIdx = state.queue[state.idx];
+  if (!state.seenIds.has(qIdx)) { state.seenIds.add(qIdx); persistWrongIds(); }
   const q = ALL_QUESTIONS[qIdx];
   const domain = q.domain||q.category||'';
   const total = state.queue.length;
@@ -823,6 +883,7 @@ function persistProgress(domain, wasCorrect) {
   }
   p.wrongIds=[...state.wrongIds];
   p.bookmarkedIds=[...state.bookmarkedIds];
+  p.seenIds=[...state.seenIds];
   putProfile(state.activeSlot, p);
 }
 
@@ -905,20 +966,76 @@ function initPracticeTestCounts() {
   });
 }
 
+function getPracticeSetIndices(ps) {
+  if (ps.filter === 'FOCUS') {
+    return ALL_QUESTIONS.map((q,i) => q.source_tag === 'FOCUS' ? i : -1).filter(i => i >= 0);
+  }
+  return ALL_QUESTIONS.map((q,i) => q.source_doc === ps.filter ? i : -1).filter(i => i >= 0);
+}
+
 function startPracticeTest(idx) {
   const ps = PRACTICE_SETS[idx];
-  let indices;
-  if (ps.filter === 'FOCUS') {
-    indices = ALL_QUESTIONS.map((q,i) => q.source_tag === 'FOCUS' ? i : -1).filter(i => i >= 0);
-  } else {
-    indices = ALL_QUESTIONS.map((q,i) => q.source_doc === ps.filter ? i : -1).filter(i => i >= 0);
-  }
+  const indices = getPracticeSetIndices(ps);
   if (!indices.length) { alert('No questions found for this practice set.'); return; }
+
+  // Highlight sidebar button
+  document.querySelectorAll('.domain-btn, .pt-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('pt-btn-' + idx).classList.add('active');
+  document.getElementById('topbar-title').textContent = ps.label;
+
+  // Build stats for the start screen
+  const total = indices.length;
+  const seenInSet   = indices.filter(i => state.seenIds.has(i)).length;
+  const unseenInSet = total - seenInSet;
+  const wrongInSet  = indices.filter(i => state.wrongIds.has(i)).length;
+  const hasAttempted = seenInSet > 0;
+  const seenPct = total > 0 ? Math.round(seenInSet / total * 100) : 0;
+
+  document.getElementById('quiz-area').innerHTML = `
+    <div class="pt-start-card">
+      <h2>${ps.label}</h2>
+      <p class="pt-start-sub">${total} question${total!==1?'s':''} in this set</p>
+      <div class="pt-start-badge ${hasAttempted?'attempted':'fresh'}">
+        ${hasAttempted ? '✓ Previously attempted — ' + seenPct + '% covered (' + seenInSet + ' / ' + total + ' seen)' : '🆕 Not yet attempted'}
+      </div>
+      <div class="pt-start-stats">
+        <div class="pt-start-stat"><div class="n">${total}</div><div class="l">Total Qs</div></div>
+        <div class="pt-start-stat"><div class="n" style="color:var(--green)">${seenInSet}</div><div class="l">Seen</div></div>
+        <div class="pt-start-stat"><div class="n" style="color:var(--red)">${wrongInSet}</div><div class="l">Missed</div></div>
+        <div class="pt-start-stat"><div class="n" style="color:#5bc4f5">${unseenInSet}</div><div class="l">New / Unseen</div></div>
+      </div>
+      <div class="shuffle-row">
+        <label class="toggle-switch"><input type="checkbox" ${state.shuffle?'checked':''} onchange="state.shuffle=this.checked"><span class="toggle-slider"></span></label>
+        <span class="toggle-label">Shuffle questions</span>
+      </div>
+      <div class="shuffle-row">
+        <label class="toggle-switch"><input type="checkbox" ${state.unseenOnly?'checked':''} onchange="state.unseenOnly=this.checked"><span class="toggle-slider"></span></label>
+        <span class="toggle-label">Unseen questions only <span style="color:#5bc4f5;font-weight:600;">${unseenInSet} left</span></span>
+      </div>
+      <div class="start-actions" style="margin-top:20px;">
+        <button class="nav-btn primary" onclick="launchPracticeTest(${idx})">Start Test →</button>
+        ${wrongInSet > 0 ? `<button class="nav-btn secondary" onclick="launchPracticeTest(${idx}, true)" style="color:var(--red);border-color:var(--red)">Drill ${wrongInSet} Missed ✗</button>` : ''}
+      </div>
+    </div>`;
+}
+
+function launchPracticeTest(idx, wrongOnly) {
+  const ps = PRACTICE_SETS[idx];
+  let indices = getPracticeSetIndices(ps);
+  if (!indices.length) { alert('No questions found for this practice set.'); return; }
+  if (wrongOnly) {
+    indices = indices.filter(i => state.wrongIds.has(i));
+    if (!indices.length) { alert('No missed questions in this set.'); return; }
+  } else if (state.unseenOnly) {
+    const unseen = indices.filter(i => !state.seenIds.has(i));
+    if (!unseen.length) { alert('🎉 You\'ve seen all questions in this set!'); return; }
+    indices = unseen;
+  }
   if (state.shuffle) indices.sort(() => Math.random() - 0.5);
   state.queue = indices;
   state.idx = 0;
   state.correct = 0; state.wrong = 0; state.skipped = 0;
-  state.answered = false; state.isDrilling = false; state.isBookmarkDrill = false;
+  state.answered = false; state.isDrilling = wrongOnly||false; state.isBookmarkDrill = false;
   state.isPracticeTest = true; state.practiceTestLabel = ps.label;
   state.sessionStats = {};
   document.querySelectorAll('.domain-btn, .pt-btn').forEach(b => b.classList.remove('active'));
@@ -1260,6 +1377,7 @@ function updateWrongButton() {
   if(state.wrongIds.size>0){btn.style.display='flex';cnt.textContent=state.wrongIds.size;}
   updateBookmarkButton();
   updateFlagsButton();
+  updateUnseenButton();
 }
 
 function updateFlagsButton() {
