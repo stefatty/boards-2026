@@ -620,9 +620,11 @@ function updateProfilePill() {
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────
+// MAIN_POOL excludes Key Memorization (ERUPTION) questions
+const MAIN_POOL_IDS = ALL_QUESTIONS.map((_,i)=>i).filter(i=>ALL_QUESTIONS[i].source_tag!=='ERUPTION');
 const domainCounts = {};
-ALL_QUESTIONS.forEach(q => {
-  const d = q.domain || q.category || 'Other';
+MAIN_POOL_IDS.forEach(i => {
+  const d = ALL_QUESTIONS[i].domain || ALL_QUESTIONS[i].category || 'Other';
   domainCounts[d] = (domainCounts[d]||0)+1;
 });
 
@@ -640,7 +642,7 @@ function buildSidebar() {
     btn.onclick = () => selectDomain(domain);
     list.appendChild(btn);
   });
-  document.getElementById('cnt-all').textContent = ALL_QUESTIONS.length;
+  document.getElementById('cnt-all').textContent = MAIN_POOL_IDS.length;
 }
 
 function selectDomain(domain) {
@@ -663,8 +665,8 @@ function setMode(mode) {
 // ── Queue ──────────────────────────────────────────────────────────────
 function buildQueue(domain, ids=null) {
   let pool = ids ? [...ids] : domain==='all'
-    ? ALL_QUESTIONS.map((_,i)=>i)
-    : ALL_QUESTIONS.map((q,i)=>(q.domain||q.category)===domain?i:-1).filter(i=>i>=0);
+    ? MAIN_POOL_IDS.slice()
+    : MAIN_POOL_IDS.filter(i=>(ALL_QUESTIONS[i].domain||ALL_QUESTIONS[i].category)===domain);
   if (state.shuffle) for (let i=pool.length-1;i>0;i--) {
     const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];
   }
@@ -673,8 +675,8 @@ function buildQueue(domain, ids=null) {
 
 function startQuiz(domain) {
   if (state.unseenOnly) {
-    const allIds = domain==='all' ? ALL_QUESTIONS.map((_,i)=>i)
-      : ALL_QUESTIONS.map((q,i)=>(q.domain||q.category)===domain?i:-1).filter(i=>i>=0);
+    const allIds = domain==='all' ? MAIN_POOL_IDS.slice()
+      : MAIN_POOL_IDS.filter(i=>(ALL_QUESTIONS[i].domain||ALL_QUESTIONS[i].category)===domain);
     const pool = allIds.filter(i=>!state.seenIds.has(i));
     if (!pool.length) { alert('🎉 You\'ve seen all questions in this set!'); return; }
     if (state.shuffle) for (let i=pool.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]]; }
@@ -724,7 +726,7 @@ function toggleBookmark(qIdx) {
 }
 
 function startDrillUnseen() {
-  const unseenIds = ALL_QUESTIONS.map((_,i)=>i).filter(i=>!state.seenIds.has(i));
+  const unseenIds = MAIN_POOL_IDS.filter(i=>!state.seenIds.has(i));
   if (!unseenIds.length) { alert('🎉 You\'ve seen all 1,842 questions!'); return; }
   state.queue = unseenIds.slice();
   for (let i=state.queue.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1));[state.queue[i],state.queue[j]]=[state.queue[j],state.queue[i]]; }
@@ -741,7 +743,7 @@ function updateUnseenButton() {
   const btn = document.getElementById('unseen-drill-btn');
   const cnt = document.getElementById('cnt-unseen');
   if (!btn || !cnt) return;
-  const unseenCount = ALL_QUESTIONS.length - state.seenIds.size;
+  const unseenCount = MAIN_POOL_IDS.filter(i=>!state.seenIds.has(i)).length;
   cnt.textContent = unseenCount > 0 ? unseenCount : '';
   btn.style.display = unseenCount > 0 ? 'flex' : 'none';
 }
@@ -757,8 +759,8 @@ function updateBookmarkButton() {
 // ── Start Screen ───────────────────────────────────────────────────────
 function renderStart() {
   const domain = state.domain;
-  const allIds = domain==='all' ? ALL_QUESTIONS.map((_,i)=>i)
-    : ALL_QUESTIONS.map((q,i)=>(q.domain||q.category)===domain?i:-1).filter(i=>i>=0);
+  const allIds = domain==='all' ? MAIN_POOL_IDS.slice()
+    : MAIN_POOL_IDS.filter(i=>(ALL_QUESTIONS[i].domain||ALL_QUESTIONS[i].category)===domain);
   const count = allIds.length;
   const wrongInDomain = [...state.wrongIds].filter(i=>domain==='all'||(ALL_QUESTIONS[i].domain||ALL_QUESTIONS[i].category)===domain).length;
   const bookmarkedInDomain = [...state.bookmarkedIds].filter(i=>domain==='all'||(ALL_QUESTIONS[i].domain||ALL_QUESTIONS[i].category)===domain).length;
