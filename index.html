@@ -571,6 +571,11 @@ function enterApp(slot) {
   (p.wrongIds || []).forEach(i => _savedSeen.add(i));
   state.seenIds = _savedSeen;
   if (_savedSeen.size > (p.seenIds||[]).length) { p.seenIds=[..._savedSeen]; putProfile(slot,p); }
+  // Sanitize: remove stale indices from deleted questions (e.g. after question bank updates)
+  const _qLen = ALL_QUESTIONS.length;
+  state.wrongIds = new Set([...state.wrongIds].filter(i => i < _qLen));
+  state.bookmarkedIds = new Set([...state.bookmarkedIds].filter(i => i < _qLen));
+  state.seenIds = new Set([...state.seenIds].filter(i => i < _qLen));
   state.correct = 0; state.wrong = 0; state.skipped = 0;
   state.sessionStats = {};
   // Update last seen
@@ -762,8 +767,8 @@ function renderStart() {
   const allIds = domain==='all' ? MAIN_POOL_IDS.slice()
     : MAIN_POOL_IDS.filter(i=>(ALL_QUESTIONS[i].domain||ALL_QUESTIONS[i].category)===domain);
   const count = allIds.length;
-  const wrongInDomain = [...state.wrongIds].filter(i=>domain==='all'||(ALL_QUESTIONS[i].domain||ALL_QUESTIONS[i].category)===domain).length;
-  const bookmarkedInDomain = [...state.bookmarkedIds].filter(i=>domain==='all'||(ALL_QUESTIONS[i].domain||ALL_QUESTIONS[i].category)===domain).length;
+  const wrongInDomain = [...state.wrongIds].filter(i=>domain==='all'||(ALL_QUESTIONS[i]?.domain||ALL_QUESTIONS[i]?.category)===domain).length;
+  const bookmarkedInDomain = [...state.bookmarkedIds].filter(i=>domain==='all'||(ALL_QUESTIONS[i]?.domain||ALL_QUESTIONS[i]?.category)===domain).length;
   const pct = domain!=='all' ? Math.round((BLUEPRINT[domain]||0)*100) : null;
 
   // Lifetime stats for this domain from saved profile
